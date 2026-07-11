@@ -1,0 +1,351 @@
+// KESHO — Prisma schema (Part 1 stub)
+// Full financial data model (wallets, pockets, transactions, bills,
+// savings goals, RLS-aligned tables) is generated in the Database module.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Mirrors the Supabase auth user; extended profile data lives here.
+model Profile {
+  id         String   @id @default(uuid())
+  authUserId String   @unique @map("auth_user_id")
+  firstName  String   @map("first_name")
+  lastName   String   @map("last_name")
+  email      String   @unique
+  phone      String?
+  country    String?
+  currency   String   @default("KES")
+  language   String   @default("en")
+  timezone   String   @default("Africa/Nairobi")
+  avatarUrl  String?  @map("avatar_url")
+  payday     Int?
+  accountStatus String @default("ACTIVE") @map("account_status")
+  pendingDeletionAt DateTime? @map("pending_deletion_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("profiles")
+}
+
+/// Append-only record of security-relevant and general account actions.
+/// Full auditability model is expanded in the Database module (Part 3).
+model AuditLog {
+  id         String   @id @default(uuid())
+  authUserId String   @map("auth_user_id")
+  action     String
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([authUserId])
+  @@map("audit_logs")
+}
+
+model LoginHistory {
+  id         String   @id @default(uuid())
+  authUserId String   @map("auth_user_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  device     String?
+  location   String?
+  success    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([authUserId])
+  @@map("login_history")
+}
+
+/// Hashed Wallet PIN only. Never store the PIN in plaintext.
+model WalletPin {
+  id            String    @id @default(uuid())
+  authUserId    String    @unique @map("auth_user_id")
+  pinHash       String    @map("pin_hash")
+  failedAttempts Int      @default(0) @map("failed_attempts")
+  lockedUntil   DateTime? @map("locked_until")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("wallet_pins")
+}
+
+model Passkey {
+  id                String   @id @default(uuid())
+  authUserId        String   @map("auth_user_id")
+  credentialId      String   @unique @map("credential_id")
+  publicKey         String   @map("public_key")
+  counter           BigInt   @default(0)
+  deviceLabel       String?  @map("device_label")
+  transports        String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  lastUsedAt        DateTime? @map("last_used_at")
+
+  @@index([authUserId])
+  @@map("passkeys")
+}
+
+model TrustedDevice {
+  id           String   @id @default(uuid())
+  authUserId   String   @map("auth_user_id")
+  deviceLabel  String   @map("device_label")
+  browser      String?
+  os           String?
+  ipAddress    String?  @map("ip_address")
+  lastActiveAt DateTime @default(now()) @map("last_active_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([authUserId])
+  @@map("trusted_devices")
+}
+
+// =====================================================================
+// WALLET & MONEY POCKETS
+// =====================================================================
+
+model Wallet {
+  id                     String   @id @default(uuid())
+  authUserId             String   @unique @map("auth_user_id")
+  totalBalance           Decimal  @default(0) @map("total_balance") @db.Decimal(14, 2)
+  availableBalance       Decimal  @default(0) @map("available_balance") @db.Decimal(14, 2)
+  reservedBalance        Decimal  @default(0) @map("reserved_balance") @db.Decimal(14, 2)
+  dailyBudget            Decimal? @map("daily_budget") @db.Decimal(14, 2)
+  weeklyBudget           Decimal? @map("weekly_budget") @db.Decimal(14, 2)
+  monthlyBudget          Decimal? @map("monthly_budget") @db.Decimal(14, 2)
+  financialHealthScore   Int      @default(50) @map("financial_health_score")
+  walletStatus           String   @default("ACTIVE") @map("wallet_status")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  pockets      MoneyPocket[]
+  budgetRules  BudgetRule[]
+  transactions Transaction[]
+
+  @@map("wallets")
+}
+
+/// Default pockets: Daily Spending, Bills Vault, Transport, Emergency Fund,
+/// Food, Shopping, Savings, Entertainment, Business (optional), Other.
+/// Created automatically via trigger when a wallet is created.
+model MoneyPocket {
+  id           String    @id @default(uuid())
+  walletId     String    @map("wallet_id")
+  name         String
+  type         String // e.g. DAILY_SPENDING, BILLS_VAULT, TRANSPORT, EMERGENCY_FUND, CUSTOM...
+  balance      Decimal   @default(0) @db.Decimal(14, 2)
+  targetAmount Decimal?  @map("target_amount") @db.Decimal(14, 2)
+  spendingLimit Decimal? @map("spending_limit") @db.Decimal(14, 2)
+  locked       Boolean   @default(false)
+  archived     Boolean   @default(false)
+  priority     Int       @default(0)
+  icon         String    @default("wallet")
+  color        String    @default("#1fa863")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@map("money_pockets")
+}
+
+/// Automatic/percentage/manual income allocation rules across pockets.
+model BudgetRule {
+  id             String   @id @default(uuid())
+  walletId       String   @map("wallet_id")
+  allocationMode String   @map("allocation_mode") // AUTOMATIC | PERCENTAGE | MANUAL
+  allocations    Json // [{ pocketId, percentage? , fixedAmount? }]
+  dailyLimit     Decimal? @map("daily_limit") @db.Decimal(14, 2)
+  weeklyLimit    Decimal? @map("weekly_limit") @db.Decimal(14, 2)
+  monthlyLimit   Decimal? @map("monthly_limit") @db.Decimal(14, 2)
+  alertsEnabled  Boolean  @default(true) @map("alerts_enabled")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@map("budget_rules")
+}
+
+// =====================================================================
+// INCOME / EXPENSES / TRANSACTIONS
+// =====================================================================
+
+model Income {
+  id         String   @id @default(uuid())
+  authUserId String   @map("auth_user_id")
+  amount     Decimal  @db.Decimal(14, 2)
+  source     String // SALARY | BUSINESS | ALLOWANCE | FREELANCE | GIFT | OTHER
+  frequency  String   @default("ONE_OFF") // ONE_OFF | WEEKLY | MONTHLY | etc.
+  payday     Int?
+  recurring  Boolean  @default(false)
+  receivedAt DateTime @default(now()) @map("received_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([authUserId])
+  @@map("income")
+}
+
+model Expense {
+  id         String   @id @default(uuid())
+  authUserId String   @map("auth_user_id")
+  pocketId   String?  @map("pocket_id")
+  amount     Decimal  @db.Decimal(14, 2)
+  category   String
+  merchant   String?
+  notes      String?
+  receiptUrl String?  @map("receipt_url")
+  location   String?
+  spentAt    DateTime @default(now()) @map("spent_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([authUserId])
+  @@index([pocketId])
+  @@map("expenses")
+}
+
+/// Every financial movement: deposit, withdrawal, transfer, bill payment,
+/// pocket transfer, savings contribution, refund, adjustment.
+model Transaction {
+  id               String   @id @default(uuid())
+  walletId         String   @map("wallet_id")
+  authUserId       String   @map("auth_user_id")
+  type             String // DEPOSIT | WITHDRAWAL | TRANSFER | BILL_PAYMENT | POCKET_TRANSFER | SAVINGS | REFUND | ADJUSTMENT
+  amount           Decimal  @db.Decimal(14, 2)
+  fee              Decimal  @default(0) @db.Decimal(14, 2)
+  currency         String   @default("KES")
+  reference        String   @unique
+  provider         String? // INTASEND | MPESA | AIRTEL | BANK | INTERNAL
+  providerRef      String?  @map("provider_reference")
+  status           String   @default("PENDING") // PENDING | SUCCESS | FAILED | REVERSED | CANCELLED
+  description      String?
+  balanceBefore    Decimal  @map("balance_before") @db.Decimal(14, 2)
+  balanceAfter     Decimal  @map("balance_after") @db.Decimal(14, 2)
+  ipAddress        String?  @map("ip_address")
+  device           String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@index([authUserId])
+  @@index([status])
+  @@map("transactions")
+}
+
+// =====================================================================
+// BILLS
+// =====================================================================
+
+model BillCategory {
+  id   String @id @default(uuid())
+  name String @unique // Electricity, Water, WiFi, Rent, School Fees, Insurance, Loan, Tax, Subscriptions, Other
+
+  bills Bill[]
+
+  @@map("bill_categories")
+}
+
+model Bill {
+  id             String    @id @default(uuid())
+  authUserId     String    @map("auth_user_id")
+  categoryId     String    @map("category_id")
+  pocketId       String?   @map("pocket_id")
+  name           String
+  amount         Decimal   @db.Decimal(14, 2)
+  dueDate        DateTime  @map("due_date")
+  autoPay        Boolean   @default(false) @map("auto_pay")
+  reminderDays   Int       @default(3) @map("reminder_days")
+  status         String    @default("UPCOMING") // UPCOMING | DUE_TODAY | PAID | OVERDUE
+  merchant       String?
+  reference      String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  category BillCategory  @relation(fields: [categoryId], references: [id])
+  payments BillPayment[]
+
+  @@index([authUserId])
+  @@index([status])
+  @@map("bills")
+}
+
+model BillPayment {
+  id            String   @id @default(uuid())
+  billId        String   @map("bill_id")
+  authUserId    String   @map("auth_user_id")
+  amount        Decimal  @db.Decimal(14, 2)
+  transactionId String?  @map("transaction_id")
+  paidAt        DateTime @default(now()) @map("paid_at")
+  status        String   @default("SUCCESS")
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+  @@map("bill_payments")
+}
+
+// =====================================================================
+// SAVINGS / EMERGENCY FUND / TRANSPORT
+// =====================================================================
+
+model SavingsGoal {
+  id           String    @id @default(uuid())
+  authUserId   String    @map("auth_user_id")
+  name         String
+  targetAmount Decimal   @map("target_amount") @db.Decimal(14, 2)
+  currentAmount Decimal  @default(0) @map("current_amount") @db.Decimal(14, 2)
+  deadline     DateTime?
+  priority     Int       @default(0)
+  autoSave     Boolean   @default(false) @map("auto_save")
+  lockedUntil  DateTime? @map("locked_until")
+  completed    Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([authUserId])
+  @@map("savings_goals")
+}
+
+model EmergencyFund {
+  id           String   @id @default(uuid())
+  authUserId   String   @unique @map("auth_user_id")
+  balance      Decimal  @default(0) @db.Decimal(14, 2)
+  targetAmount Decimal? @map("target_amount") @db.Decimal(14, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("emergency_fund")
+}
+
+model TransportBudget {
+  id             String   @id @default(uuid())
+  authUserId     String   @unique @map("auth_user_id")
+  dailyLimit     Decimal? @map("daily_limit") @db.Decimal(14, 2)
+  weeklyLimit    Decimal? @map("weekly_limit") @db.Decimal(14, 2)
+  monthlyLimit   Decimal? @map("monthly_limit") @db.Decimal(14, 2)
+  currentBalance Decimal  @default(0) @map("current_balance") @db.Decimal(14, 2)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("transport_budget")
+}
+
+model Notification {
+  id         String    @id @default(uuid())
+  authUserId String    @map("auth_user_id")
+  channel    String // PUSH | EMAIL | SMS | IN_APP
+  title      String
+  body       String
+  readAt     DateTime? @map("read_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([authUserId])
+  @@map("notifications")
+}
