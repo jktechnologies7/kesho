@@ -1,25 +1,51 @@
 {
-  "name": "kesho-monorepo",
-  "version": "1.0.0",
-  "description": "KESHO - Fintech Platform. Personal Finance Management App",
+  "name": "@kesho/web",
   "private": true,
-  "workspaces": [
-    "apps/frontend",
-    "apps/backend"
-  ],
+  "version": "0.1.0",
+  "type": "module",
   "scripts": {
-    "dev": "npm run dev --workspaces",
-    "build": "npm run build --workspaces",
-    "lint": "npm run lint --workspaces",
-    "type-check": "npm run type-check --workspaces"
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
-  "keywords": [
-    "fintech",
-    "personal-finance",
-    "wallet",
-    "budgeting",
-    "pwa"
-  ],
-  "author": "Japhee Ke <japhee@jkcollections.com>",
-  "license": "MIT"
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^6.26.0",
+    "react-hook-form": "^7.52.2",
+    "@hookform/resolvers": "^3.9.0",
+    "zod": "^3.23.8",
+    "@tanstack/react-query": "^5.51.23",
+    "zustand": "^4.5.4",
+    "framer-motion": "^11.3.24",
+    "@supabase/supabase-js": "^2.45.1",
+    "react-phone-number-input": "^3.4.9",
+    "i18next": "^23.13.0",
+    "react-i18next": "^15.0.1",
+    "recharts": "^2.12.7",
+    "lucide-react": "^0.427.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0",
+    "vite-plugin-pwa": "^0.20.1",
+    "typescript": "^5.5.4",
+    "tailwindcss": "^3.4.7",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.40",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "vitest": "^2.0.5",
+    "@testing-library/react": "^16.0.0"
+  }
 }
