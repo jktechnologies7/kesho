@@ -1,0 +1,25 @@
+{
+  "name": "kesho-monorepo",
+  "version": "1.0.0",
+  "description": "KESHO - Fintech Platform. Personal Finance Management App",
+  "private": true,
+  "workspaces": [
+    "apps/frontend",
+    "apps/backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "type-check": "npm run type-check --workspaces"
+  },
+  "keywords": [
+    "fintech",
+    "personal-finance",
+    "wallet",
+    "budgeting",
+    "pwa"
+  ],
+  "author": "Japhee Ke <japhee@jkcollections.com>",
+  "license": "MIT"
+}
